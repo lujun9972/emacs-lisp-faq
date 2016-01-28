@@ -1,0 +1,200 @@
+#+TITLE: String
+#+AUTHOR: DarkSun
+#+CATEGORY: emacs-lisp-cookbook
+#+DATE: [2016-01-28 周四 16:22]
+#+OPTIONS: ^:{}
+
+对于emacs lisp字符串来说,最重要的是要记住,字符串也是一种序列类型,因此任何对序列的操作都能作用于字符串.
+
+emacs lisp字符串是由一序列的字符组成的,而字符在emacs lisp中其实是用整数来表示的.
+
+emacs lisp字符串与其他语言(包括common lisp)中字符串相当不同的一点在于它是带有属性的.(关于string的properties在后面讨论)
+
+* 每次处理一个字符
+使用`map'系列函数可以每次处理字符串中的一个函数. 
+#+BEGIN_SRC emacs-lisp
+  (mapcar (lambda (c)
+            (format "%c" c)) "Hello World")
+
+  ;; =>
+  ;; ("H" "e" "l" "l" "o" " " "W" "o" "r" "l" "d")
+#+END_SRC
+
+当然也可以使用cl-lib库中的`cl-loop'宏
+#+BEGIN_SRC emacs-lisp
+  (cl-loop for c across "Hello World"
+           collect c)
+
+  ;; =>
+  ;; (72 101 108 108 111 32 87 111 114 108 100)
+#+END_SRC
+
+* 字符和字符值之间的转换
+
+字符在emacs lisp中本就是用整数来表示的.
+#+BEGIN_SRC emacs-lisp
+  (format "%c" (+ ?a 1))
+  ;; =>
+  ;; "b"
+#+END_SRC
+
+* 测试一个对象是否是字符串
+使用`stringp'能够测试一个对象是否为字符串
+#+BEGIN_SRC emacs-lisp
+  (stringp "hello")                       ;=>t
+  (stringp 'hello)                        ;=>nil
+  (stringp 123)                           ;=>nil
+#+END_SRC
+
+* 去除字符串两端的空白字符
+使用`string-trim-left',`string-trim-right',`string-trim'可以去除字符串左边,右边,两边的空白字符
+
+所谓空格字符,具体来说表示空格,\t,\n和\r
+
+这几个方法不会更改原字符串参数,而是返回一个新的,不带空白字符的字符串.
+
+* 合并字符串
+
+要把几个小字符串合并成一个大的字符串,最简单的方法是使用"subr-x.el"中定义的`string-join'方法.
+#+BEGIN_SRC emacs-lisp
+  (string-join '("hello" "world") " ")    ;=>"hello world"
+#+END_SRC
+
+当然,也可以使用`mapconcat'来实现
+#+BEGIN_SRC emacs-lisp
+  (mapconcat #'identity '("hello" "you") " ") ;=>"hello you"
+#+END_SRC
+
+如果字符串片段不是保存在一个列表中,而是多个变量中,也可以使用`format'函数来实现
+#+BEGIN_SRC emacs-lisp
+  (format "%s %s" "hello" "you")          ;=>"hello you"
+#+END_SRC
+
+还有一种方法是使用`with-output-to-string'也可以合并字符串
+#+BEGIN_SRC emacs-lisp
+  (with-output-to-string
+    (dolist (str '("hello" "-" "world"))
+      (princ str)))
+  ;; => "hello-world"
+#+END_SRC
+
+注意:emacs lisp中的`+'不能用于连接字符串,这一点与python,c++之类的语言不同
+#+BEGIN_SRC emacs-lisp
+  (+ "hello" "you")
+  ;; =>
+  ;;   Debugger entered--Lisp error: (wrong-type-argument number-or-marker-p "hello")
+#+END_SRC
+
+* 将字符串逐字符或逐词反转
+`subr-x.el'中定义的`string-reverse'函数能够帮助你将字符串逐字符的反转,并返回新的反转过的字符串.
+
+其实现原理在于先将string序列转换为字符list后,再用反转该list,然后在将list转换为字符串.
+#+BEGIN_SRC emacs-lisp
+  (defsubst string-reverse (str)
+    "Reverse the string STR."
+    (apply 'string (nreverse (string-to-list str))))
+#+END_SRC
+
+而要实现逐词反转,目前没有什么特别好的解决方法.
+
+一个简化的方式是使用`split-string'将字符串分隔为单词列表,再反转该列表后,再用string-join合并起来.
+
+但这种方法不可避免的会丢失连接字符的信息.
+#+BEGIN_SRC emacs-lisp
+  (defun string-reverse-by-word (str &optional seperator)
+    "Reverse STR word by word"
+    (let ((words (split-string str seperator)))
+      (string-join (nreverse words) (or  seperator
+                                         " "))))
+  (string-reverse-by-word "hello world")  ;="word hello"
+  (string-reverse-by-word "hello-world" "-")  ;="word-hello"
+#+END_SRC
+
+* 截取子字符串
+由于字符串本身也是序列,因此可以使用`subseq'来截取子字符串.
+
+其第一个参数为被截取的字符串,第二个参数为子字符串的起始位置(以0开头),第三个参数为可选参数,表示第一个不属于子串的字符位置(*不是表示字串的长度*)
+#+BEGIN_SRC emacs-lisp
+  (subseq "hello-world" 0 5)              ;=>"hello"
+  (subseq "hello-world" 6)                ;=>"world"
+#+END_SRC
+
+当然也可以直接使用`substring'或`substring-no-properties'来截取字串
+
+两个函数之间不同点在于`substring-no-properties'会忽略原字符串的属性
+#+BEGIN_SRC emacs-lisp
+  (substring "hello-world" 0 5)           ;=>"hello"
+  (substring-no-properties "hello-world" 0 5) ;=>"hello"
+#+END_SRC
+
+* 修改字符串中的子串
+使用`subseq'与`setf'联合起来就能实现修改原字符串中的子串
+#+BEGIN_SRC emacs-lisp
+  (setq str "Karl Marx")
+  (subseq str 0 4)                        ;"Karl"
+
+  (setf (subseq str 0 4) "Harp")
+  str                                     ;"Harp Marx"
+#+END_SRC
+
+*这里一定要注意的是,字符串的长度是不能改变的,因此若被修改的子串与新串具有不同的长度,则只会修改较短长度的内容*
+#+BEGIN_SRC emacs-lisp
+  (setq str "abcdefg")
+  (setf (subseq str 0 4) "123")
+  str                                     ;=>"123defg"
+  (setf (subseq str 0 4) "ABCDEF")
+  str                                     ;=>"ABCDefg"
+#+END_SRC
+
+而联合setf和substring时,字符串的长度可改变
+#+BEGIN_SRC emacs-lisp
+  (setq str "abcdefg")
+  (setf (substring str 0 4) "123")        ;=>"123efg"
+  str                                     ;=>"123efg"
+#+END_SRC
+
+* 获取字符串中的字符
+
+由于字符串是array和sequence,因此可以使用`aref'和`elt'来获取字符串中的字符
+#+BEGIN_SRC emacs-lisp
+  (aref "abc" 0)                          ;=>97
+  (elt "abc" 0)                           ;=>97
+#+END_SRC
+
+同样的,当`aref'与`elt'与`setf'联合时,可以修改原字符串中的字符
+#+BEGIN_SRC emacs-lisp
+  (setq str "abcdefg")
+  (setf (aref str 0) ?1)
+  str                                     ;"1bcdefg"
+  (setf (elt str 0) ?0)
+  str                                     ;"0bcdefg"
+#+END_SRC
+
+* 字符串的序列属性
+由于字符串本身也是序列,因此很多作用于序列的函数也能用于字符串,比如
+#+BEGIN_SRC emacs-lisp
+  (require 'cl-lib)
+
+  (cl-remove ?o "hello-world")            ;=>"hell-wrld"
+  (cl-remove ?o "hello-world" :start 5)   ;=>"hello-wrld"
+  (cl-substitute ?a ?o "hello-world")        ;=>"hella-warld"
+  (setq str "abcde")
+  (cl-replace str "123")                  ;=>"123de"
+  str                                     ;=>"123de"
+#+END_SRC
+
+* 控制字符串的大小写形式
+使用`upcase'转换字符串为大写形式
+#+BEGIN_SRC emacs-lisp
+  (upcase "hellO-wOrld")                  ;"HELLO-WORLD"
+#+END_SRC
+
+使用`downcase'转换字符串为小写形式
+#+BEGIN_SRC emacs-lisp
+  (downcase "hellO-wOrld")                  ;"hello-world"
+#+END_SRC
+
+使用`capitalize'转换字符串为单词首字母大写,其他字符小写的形式
+#+BEGIN_SRC emacs-lisp
+  (capitalize "hellO-wOrld")                  ;"Hello-World"
+#+END_SRC
