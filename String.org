@@ -198,3 +198,157 @@ emacs lisp字符串与其他语言(包括common lisp)中字符串相当不同的
 #+BEGIN_SRC emacs-lisp
   (capitalize "hellO-wOrld")                  ;"Hello-World"
 #+END_SRC
+* 字符串与symbol之间的转换
+使用`intern'函数可以将字符串转换为symbol. 若字符串表示的symbol不存在,该函数甚至会帮你生成新的symbol
+
+由于symbol是区分大小写的,因此使用`intern'函数转换字符串时,也应该注意大小写.
+#+BEGIN_SRC emacs-lisp
+  (intern "symbol-1")                     ;symbol-1
+  (intern "SYMBOL-1")                     ;SYMBOL-1
+#+END_SRC
+
+使用`intern-soft'函数也能将字符串转换为symbol,但是若字符串表示的symbol不存在,它不会帮你生成新的symbol,而是返回nil
+#+BEGIN_SRC emacs-lisp
+  (intern-soft "symbol-non-exist")
+#+END_SRC
+
+若想将symbol转换为字符串,可以使用`symbol-name'
+#+BEGIN_SRC emacs-lisp
+  (symbol-name 'symbol-name)              ;"symbol-name"
+#+END_SRC
+
+当然你也可以使用format或princ函数来实现转换
+#+BEGIN_SRC emacs-lisp
+  (format "%s" 'format)                   ;"format"
+  (with-output-to-string
+    (princ 'print))                       ;"print"
+#+END_SRC
+
+* 字符与字符串之间的转换
+使用`string-to-char'可以将单字符的字符串转换为字符
+#+BEGIN_SRC emacs-lisp
+  (string-to-char "a")                    ;97
+#+END_SRC
+
+当然你也可以将字符串当成数组或序列来看,并通过抽取序列中第一个元素的方法来将字符串转换为字符
+#+BEGIN_SRC emacs-lisp
+  (aref "a" 0)                            ;97
+  (elt "a" 0)                             ;97
+#+END_SRC
+
+使用`string'函数可以将一个或多个字符,组合成字符串
+#+BEGIN_SRC emacs-lisp
+  (string ?a)                             ;"a"
+  (string ?a ?b ?c)                       ;"abc"
+#+END_SRC
+
+* 寻找字符串中的元素
+查找字符串中元素的关键在于将字符串当成序列来看待.
+
+"cl-lib.el"中定义了`cl-find'和`cl-position'系列函数可以帮助我们在字符串中寻找符合条件的字符
+#+BEGIN_SRC emacs-lisp
+  (require 'cl-lib)
+  (cl-find ?t "The Hyperspec contains approximately 110,000 hyperlinks." :test #'equal)
+  ;; ?t
+  (cl-find ?z "The Hyperspec contains approximately 110,000 hyperlinks." :test #'equal)
+  ;; nil
+  (cl-position ?t "The Hyperspec contains approximately 110,000 hyperlinks." :test #'equal)
+  ;; 17
+  (cl-position ?z "The Hyperspec contains approximately 110,000 hyperlinks." :test #'equal)
+  ;; nil
+  (defun digit-char-p (c)
+    (and (>= c ?0)
+         (<= c ?9)))
+  (cl-position-if #'digit-char-p "The Hyperspec contains approximately 110,000 hyperlinks.")
+  ;; 37
+  (cl-position-if #'digit-char-p "The Hyperspec contains approximately 110,000 hyperlinks." :from-end t)
+  43
+#+END_SRC
+
+还可以使用`cl-count'计算字符出现在字符串中的次数
+#+BEGIN_SRC emacs-lisp
+  (cl-count ?t "The Hyperspec contains approximately 110,000 hyperlinks." :test #'equal)
+  ;; 2
+  (cl-count-if #'digit-char-p "The Hyperspec contains approximately 110,000 hyperlinks.")
+  ;; 6
+  (cl-count-if #'digit-char-p "The Hyperspec contains approximately 110,000 hyperlinks." :start 38)
+  ;; 5
+#+END_SRC
+
+* 查找字符串中的子串
+查询字符串中的字串的关键也在于将字符串当成序列看待.
+
+"cl-lib.el"中包含了`cl-search'函数用于从一个序列中搜索子序列
+#+BEGIN_SRC emacs-lisp
+  (cl-search "we" "If we can't be free we can at least be cheap")
+  ;; 3
+  (cl-search "we" "If we can't be free we can at least be cheap" :from-end t)
+  ;; 20
+  (cl-search "we" "If we can't be free we can at least be cheap" :start2 4)
+  ;; 20
+  (cl-search "we" "If we can't be free we can at least be cheap" :end2 5 :from-end t)
+  ;; 3
+  (cl-search "FREE" "If we can't be free we can at least be cheap")
+  ;; nil
+  (cl-search "FREE" "If we can't be free we can at least be cheap" :test #'char-equal)
+  ;; 15
+#+END_SRC
+
+* 字符串与数字之间的转换
+使用`string-to-number'实现字符串转换成数字,转换时甚至还能指定字符串表示的是几进制的数字
+#+BEGIN_SRC emacs-lisp
+  (string-to-number "12")                 ;12
+  (string-to-number "A" 16)               ;10
+  (string-to-number "not-a-number")       ;0
+#+END_SRC
+需要注意的是: *`string-to-number'返回的数字一定是十进制的,且若字符串不能表示为数字,则该函数返回0而不是nil*
+
+还有一种方法实现字符串转数字是使用`read-from-string'或`read-from-whole-string'.
+#+BEGIN_SRC emacs-lisp
+  (car (read-from-string "12"))           ;12
+  (read-from-whole-string "123")          ;123
+#+END_SRC
+其中,`read-from-string'返回的是一个list,其car为转换后的数字,其cdr为数字在字符串中结尾的下一个索引位置.
+
+数字转换为字符串则需要用到`format'或`princ'函数
+#+BEGIN_SRC emacs-lisp
+  (format "%d" 123)                       ;"123"
+  (with-output-to-string
+    (princ 123))                          ;"123"
+#+END_SRC
+
+* 字符串的比较
+一般比较函数`equal'和`equalp'都能用来比较两个字符串是否相等.
+但, *equalp在笔字符串时,是忽略大小写的*
+#+BEGIN_SRC emacs-lisp
+  (equal "s1" "s1")                       ;t
+  (equal "s1" "S1")                       ;nil
+  (equalp "s1" "s1")                       ;t
+  (equalp "s1" "S1")                       ;t
+#+END_SRC
+
+emacs-lisp还提供了字符串特有的比较函数,例如`string=',`string-equal',`string<',`string-lessp'.
+其中`string='是`string-equal'的别名,`string<'是`string-lessp'的别名.
+*且这些字符串比较函数都是大小写敏感的*
+#+BEGIN_SRC emacs-lisp
+  (string= "Marx" "Marx")
+  ;; t
+  (string= "Marx" "marx")
+  ;; nil
+  (string-equal "Marx" "marx")
+  ;; nil
+  (string< "Groucho" "Zeppo")
+  ;; t
+  (string< "groucho" "Zeppo")
+  ;; nil
+  (string-lessp "groucho" "Zeppo")
+  ;; nil
+#+END_SRC
+
+若把字符串当成序列来看待,则还可以使用"cl-lib"中的`cl-mismatch'函数.
+该函数本意是比较两个序列,并返回序列中出现不同元素的位置.
+#+BEGIN_SRC emacs-lisp
+  (cl-mismatch "ABC" "ABC")               ;nil
+  (cl-mismatch "Harpo Marx" "Zeppo Marx" ) ;0
+  (cl-mismatch "Harpo Marx" "Zeppo Marx" :from-end t) ;2
+#+END_SRC
