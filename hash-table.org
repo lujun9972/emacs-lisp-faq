@@ -1,0 +1,214 @@
+#+TITLE: hash-table
+#+AUTHOR: DarkSun
+#+CATEGORY: emacs-lisp-faq
+#+DATE: [2016-02-02 周二 10:00]
+#+OPTIONS: ^:{}
+Hash table适用于处理大量的键值对,当存储的键值对少时,它的性能反而不如assoc list有效率.
+
+hash table类似alist一样提供了键值配对的功能. 但比起alist来说,有如下三个方面的不同
+
++ 在搜索大量的键值对集合时,使用hash table的搜索速度比alist快得多
++ hash table中的的item是非排序的,不能有重复键值
++ 两个hash table对象无法共享同一个结构体,而两个alist对象之间有可能使用共同的tail
+     
+hash table的输出格式以#s开头后接hash table的属性和内容
+#+BEGIN_EXAMPLE
+  #s(hash-table size 65 test eql rehash-size 1.5 rehash-threshold 0.8 data
+                ())
+#+END_EXAMPLE
+* 创建hashtable
+使用`make-hash-table'可以创建一个新hashtable. 
+#+BEGIN_SRC emacs-lisp
+  (make-hash-table)                       ;#s(hash-table size 65 test eql rehash-size 1.5 rehash-threshold 0.8 data ())
+#+END_SRC
+
+`make-hash-table'还可以接受额外的几个关键字参数,最常用的关键字为:TEST,用于指定使用哪个函数来判断key的相等. 默认为eql
+#+BEGIN_SRC emacs-lisp
+  (make-hash-table :test #'equal)           ;#s(hash-table size 65 test equal rehash-size 1.5 rehash-threshold 0.8 data ())
+  (hash-table-test (make-hash-table))     ;eql
+#+END_SRC
+
+另外比较常用的参数为:size,:rehash-size和:rehash-threshold,分别指定初始的hash table容量,每次扩展多少容量以及什么时候开始扩容. 其中:
+
++ :rehash-size的参数值若为整数N,表示每次扩展N个容量. 若参数值为浮点数F,则表示每次扩容(F-1)倍. 其默认参数为1.5
++ :rehash-threshold的参数值必须为浮点数,且值的返回为(0,1.0],默认值为0.8
+#+BEGIN_SRC emacs-lisp
+  (make-hash-table :size 200 :rehash-size 2.0 :rehash-threshold 0.5) ; #s(hash-table size 200 test eql rehash-size 2.0 rehash-threshold 0.5 data ())
+#+END_SRC
+
+`make-hash-table'还接受一个:weakness的参数,该参数决定了hash table什么时候能够被垃圾回收器回收. :weakness的可选参数有:
+
++ nil(默认值) :: 表示key和value都不是弱引用,hash-table会保证key和value不会被垃圾回收机制回收
+
++ key :: 表示key为弱引用,即若除了hash-table其他地方没有引用key的变量,则key变量所指的内存块被回收. 该key-value键值对从hash-table中被删除
+
++ value :: 表示value为弱引用,即若除了hash-table其他地方没有引用value的变量,则value变量所指的内存块被回收. 该key-value键值对从hash-table中被删除
+
++ key-or-value :: 表示若除了hash-table其他地方 *同时* 没有引用key或value的变量,则key和value变量所指的内存块被回收. 该key-value键值对从hash-table中被删除
+
++ key-and-value / t :: 表示key和value都为弱引用,即若除了hash-table其他地方没有引用key或value的变量,则key或value变量所指的内存块被回收. 该key-value键值对从hash-table中被删除
+
+* 根据键取相应的值
+使用 =(gethash KEY HASH-TABLE &optional DEFAULT-VALUE)= 可以取出键为KEY的对应值.
+
+若HASH-TABLE中不存在键为KEY的键值对,则返回第三个参数DEFAULT-VALUE(默认为nil)
+#+BEGIN_SRC emacs-lisp
+  (let ((h (make-hash-table)))
+    (dotimes (n 10)
+      (puthash n (+ 100 n) h))
+    (message "%d %d"
+             (gethash 0 h -1)
+             (gethash 20 h -1)))
+  ;; 100 -1
+#+END_SRC
+
+*由于键值对的值可能本身即为nil,因此不能通过gethash的返回值是否为nil来判断KEY是否为hash-table的存在键*
+
+* 添加/修改键值对
+
+添加或修改hash-table的键值对的方法是一样的,若KEY不存在,则为新增,若KEY已存在,则为修改.
+
+有两种方法可以实现添加/修改键值对
+
+1. 使用 =(puthash KEY VALUE HASH-TABLE)=
+   #+BEGIN_SRC emacs-lisp
+     (let ((h (make-hash-table)))
+       (dotimes (n 10)
+         (puthash n n h)))
+   #+END_SRC
+2. 使用万能的setf与gethash共同实现
+   #+BEGIN_SRC emacs-lisp
+     (let ((h (make-hash-table)))
+       (dotimes (n 10)
+         (setf (gethash n h) n)))
+   #+END_SRC
+
+* 删除键值对
+
+若只想删除某个特定的键值对,则使用 =(remhash KEY HASH-TALBE)= 从HASH-TABLE中删除键为KEY的键值对.
+
+若想清空HASH-TABLE的所有内容,则使用 =(clrhash HASH-TABLE)=
+
+注意: *以上两个函数总是返回nil*
+* 获取hash-map中的所有key值 / value值
+
++在emacs24.4之后,可以直接使用"subr-x.el"中定义的`hash-table-keys'和`hash-table-values'来获取所有的key和所有的value
+#+BEGIN_SRC elisp
+  ;; get all keys
+  (require 'subr-x)
+  (hash-table-keys myHash) ; 
+  (hash-table-values myHash) ;
+#+END_SRC
+
++ 在emacs24.3则需要自定义函数
+  #+BEGIN_SRC elisp
+    (defun get-hash-keys (hashtable)
+      "Return all keys in hashtable."
+      (let (allkeys)
+        (maphash (lambda (kk vv) (setq allkeys (cons kk allkeys))) hashtable)
+        allkeys))
+
+    (defun get-hash-values (hashtable)
+      "Return all values in HASHTABLE."
+      (let (allvals)
+        (maphash (lambda (kk vv) (setq allvals (cons vv allvals))) hashtable)
+        allvals))
+  #+END_SRC
+  
+* 检查某个键是否在
+
+*由于键值对的值可能本身即为nil,因此不能通过gethash的返回值是否为nil来判断KEY是否为hash-table的存在键*
+
+要检查某个键是否存在,只能先获取hash-table中的所有key值,再判断某个键是否在其中
+#+BEGIN_SRC emacs-lisp
+  (defun  hash-table-key-exist-p (key hash-table)
+    (let ((keys (hash-table-keys hash-table)))
+      (member key keys)))
+#+END_SRC
+
+* 遍历键值对
+
+使用 =(maphash myFunc myHash)= 来对myHash中的所有键值对,依次调用myFunc函数处理,且myFunc需要接收两个参数,一个key,一个value.
+#+BEGIN_SRC emacs-lisp
+  (let ((h (make-hash-table)))
+    (dotimes (n 10)
+      (setf (gethash n h) n))
+    (maphash (lambda (key val)
+               (message "%s-%c" key (+ ?a val)))
+             h))
+  ;; 0-a
+  ;; 1-b
+  ;; 2-c
+  ;; 3-d
+  ;; 4-e
+  ;; 5-f
+  ;; 6-g
+  ;; 7-h
+  ;; 8-i
+  ;; 9-j
+#+END_SRC
+
+*maphash总是返回nil*
+
+* 统计键值对总数
+无需遍历一遍hash-table然后手工统计总数,emacs-lisp提供了一个内置函数来完成该功能 =(hash-table-count HASH-TABLE)=
+#+BEGIN_SRC emacs-lisp
+  (let ((h (make-hash-table)))
+    (dotimes (n 10)
+      (setf (gethash n h) n))
+    (hash-table-count h))                 ;10
+#+END_SRC
+* 修改Hash-table的比较方法
+要动态修改Hash-table中的查询机制,需要同时修改计算Hash Code的方法和比较key值的方法.
+
++ (define-hash-table-test name test-fn hash-fn)
+  定义一个名为name的hash-table查询机制.
+  
+  当定义了查询机制后,该查询机制就可以传给make-hash-table中的:test参数用于新生成的hash-table了.
+  
+  test-fn需要接收两个key作为参数,并在认为两个key相等时返回非nil
+  
+  hash-fn则需要接收一个key作为参数,并返回一个整数(可以为负数)作为它的hash值.
+  
+  elisp提供了一个函数用于根据object的内容来生成hash值:sxhash
+  #+BEGIN_SRC emacs-lisp
+    (defun case-fold-string= (a b)
+      (eq t (compare-strings a nil nil b nil nil t)))
+    (defun case-fold-string-hash (a)
+      (sxhash (upcase a)))
+
+    (define-hash-table-test 'case-fold
+      'case-fold-string= 'case-fold-string-hash)
+
+    (make-hash-table :test 'case-fold)
+  #+END_SRC
+  
++ (sxhash obj)
+  
+  根据obj的内容生成hash code,若两个obj是equal的,则该函数返回相等的hashcode
+  #+BEGIN_SRC emacs-lisp
+    (define-hash-table-test 'contents-hash 'equal 'sxhash)
+
+    (make-hash-table :test 'contents-hash)
+  #+END_SRC
+* 获取hash中的属性
++ 获取hash中的查询机制(即:test属性的值)
+
+  (hash-table-test myHashTable)
+  
++ 获取hash-table中:weak属性的值
+
+  (hash-table-weakness myHash)
+  
++ 获取hash-table中:rehash-size参数的值
+  
+  (hash-table-rehash-size table)
+  
++ 获取hash-table中:rehash-threshold参数的值
+
+  (hash-table-rehash-threshold table)
+  
++ 获取hash-table中的:size参数的值
+
+  (hash-table-size table)
+  
