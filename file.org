@@ -1,0 +1,16 @@
+#+TITLE: file
+#+AUTHOR: DarkSun
+#+CATEGORY: emacs-lisp-faq
+#+DATE: [2016-02-03 周三 14:37]
+#+OPTIONS: ^:{}
+
+* 相对路径转绝对路径
+使用 =(expand-file relative-file &optional default-directory)= 会返回RELATIVE－FILE的绝对路径.
+
+参数DEFAULT-DIRECTORY指明了relative-file是相对哪个目录来说的. 其默认值为当前buffer的`default-directory'
+
+#+BEGIN_SRC emacs-lisp
+  (expand-file-name "file.org")           ;"/home/Administrator/emacs-lisp-faq/file.org"
+  (expand-file-name "abc.org")            ;"/home/Administrator/emacs-lisp-faq/abc.org"
+  (expand-file-name "abc.org" "/tmp")     ;"/tmp/abc.org"
+#+END_SRC
