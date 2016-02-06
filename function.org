@@ -1,0 +1,74 @@
+#+TITLE: function
+#+AUTHOR: DarkSun
+#+CATEGORY: emacs-lisp-faq
+#+DATE: [2016-02-02 周二 10:08]
+#+OPTIONS: ^:{}
+
+* 函数的作用于
+defun定义的函数在全局作用域可见,即使这个定义是嵌套在另一个函数定义中的.
+#+BEGIN_SRC emacs-lisp
+  (defun foo (x)
+    (print x)
+    (defun bar (y)
+      (print (1+ y))))
+  (functionp 'bar)                        ;nil
+  (foo 1)
+  (functionp 'bar)                        ;t
+  (bar 1)                                 ;2
+#+END_SRC
+注意: *嵌套在其他函数内定义的函数,其生命周期起始于外围函数执行后*.
+
+* 函数作为另一函数的参数或返回值.
+在elisp中,函数也跟其他类型的值一样,可以作为函数的参数或返回值. 
+
+当一个函数作为参数时,一般会使用 =(funcall FUNCTION &rest ARGUMENTS)= 或 =(apply FUNCTION &rest ARGUMENTS)=.
+这两个函数的作用都是以ARGUMENTS作为参数调用FUNCTION. 两者不同点在于`apply'的最后一个参数必须为list,且该list中的元素会被分解出来一个一个地传给FUNCTION.
+#+BEGIN_SRC emacs-lisp
+  (funcall #'+ 1 2 3 4)                   ;10
+  (apply #'+ 1 2 '(3 4))                  ;10
+#+END_SRC
+
+当一个函数要返回另一个函数时,一般使用 =(lambda ARGS [DOCSTRING] [INTERACTIVE] BODY)= 返回一个匿名函数. 
+`lambda'的语法与`defun'的语法及其类似,不同点在于将`defun'换成`lambda',然后省略掉函数名
+#+BEGIN_SRC emacs-lisp
+  (defun make-adder (addition)
+    (lambda (arg)
+      (+ arg addition)))
+#+END_SRC
+
+上面那个例子中定义了名为`make-adder'的函数,它接受一个参数`addition'并返回另一个函数,返回的那个函数也接受一个参数并将该参数与`additon'相加.
+
+*然而非常可惜,上面的例子是错误的*
+#+BEGIN_SRC emacs-lisp
+  (setq adder1 (make-adder 1))            ; (lambda (arg) (+ arg addition))
+  (funcall adder1 2)                      ;Debugger entered--Lisp error: (void-variable addition)
+#+END_SRC
+居然报了个错误,说变量ADDITION没有被定义. 造成这个结果的原因在于elisp默认使用的是动态作用域,因此adder1函数在执行时会在执行的上下文环境中查找ADDITION的值,当然找不到了.
+
+解决的方法是明确告诉elisp我们要使用静态作用域:只需要设置变量`lexical-binding'为t就行了
+#+BEGIN_SRC emacs-lisp
+  (setq lexical-binding t)
+  (defun make-adder (addition)
+    (lambda (arg)
+      (+ arg addition)))
+
+  (setq adder1 (make-adder 1))            ;(closure ((addition . 1) t) (arg) (+ arg addition))
+
+  (funcall adder1 2)                      ;3
+#+END_SRC
+*注意到,设置lexical-binding为t后,最后返回的是一个closure对象而不是lambda对象了*
+
+事实上,我们一般使用 =M-x add-file-local-variable= 或 =M-x add-file-local-variable-prop-line= 为源代码文件直接添加变量注释,设置lexical-binding为t.
+
+* currying function
+借助函数既可以是参数也可以是返回值的特点,要实现curry化非常的简单.
+#+BEGIN_SRC emacs-lisp
+  (setq lexical-binding t)
+  (defun curry (fn &rest args)
+    (lambda (&rest other-args)
+      (apply fn (append args other-args))))
+
+  (setq adder1and2 (curry #'+ 1 2))       ; (closure ((args 1 2) (fn . +) t) (&rest other-args) (apply fn (append args other-args)))
+
+  (funcall adder1and2 3 4)                ;10
+#+END_SRC
