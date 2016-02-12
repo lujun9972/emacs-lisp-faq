@@ -1,7 +1,12 @@
 emacs lisp faq
 
 [[file:date-and-times.org][date-and-times.org]]
+
 [[file:file.org][file.org]]
+
 [[file:function.org][function.org]]
+
 [[file:hash-table.org][hash-table.org]]
+
 [[file:String.org][String.org]]
+
