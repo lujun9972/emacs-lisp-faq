@@ -72,3 +72,47 @@ defun定义的函数在全局作用域可见,即使这个定义是嵌套在另�
 
   (funcall adder1and2 3 4)                ;10
 #+END_SRC
+
+* 带缓存功能的函数
+#+BEGIN_SRC emacs-lisp
+  (setq lexical-binding t)
+  (defun memoize (fn)
+    "返回`fn'的带缓存功能的相应版本的函数"
+    (let ((cache (make-hash-table :test 'equal)))
+      (lambda (&rest args)
+        (if (member args (hash-table-keys cache))
+            (gethash args cache)
+          (setf (gethash args cache)
+                (apply fn args))))))
+
+  (defun adder (a b)
+    (message "exeute adder %d %d" a b)
+    (+ a b))
+
+  (fset 'mem-adder (memoize #'adder))
+
+  (mem-adder 1 2) ;第一次执行会输出execute adder 1 2 并返回值3
+  (mem-adder 1 2) ;第二次执行会直接返回值3
+#+END_SRC
+
+* 组合多个函数的函数
+#+BEGIN_SRC emacs-lisp
+  (setq lexical-binding t)
+  (defun compose-fns (&rest fns)
+    "组合多个函数"
+    (if fns
+        (let ((fn1 (car (last fns)))
+              (fns (butlast fns)))
+          (lambda (&rest args)
+            (reduce #'funcall fns
+                    :from-end t
+                    :initial-value (apply fn1 args))))
+      #'identity))
+
+  (defun 2times (a)
+    (+ a a))
+
+  (fset '4times  (compose-fns #'2times #'2times))
+
+  (4times 2)                              ;8
+#+END_SRC
