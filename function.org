@@ -102,17 +102,17 @@ defun定义的函数在全局作用域可见,即使这个定义是嵌套在另�
     "组合多个函数"
     (if fns
         (let ((fn1 (car (last fns)))
-              (fns (butlast fns)))
+              (fns (reverse (butlast fns))))
           (lambda (&rest args)
-            (reduce #'funcall fns
-                    :from-end t
-                    :initial-value (apply fn1 args))))
+            (let ((value (apply fn1 args)))
+              (dolist (fn fns value)
+                (setq value (funcall fn value))))))
       #'identity))
 
   (defun 2times (a)
     (+ a a))
 
-  (fset '4times  (compose-fns #'2times #'2times))
+  (fset '8times  (compose-fns #'2times #'2times #'2times))
 
-  (4times 2)                              ;8
+  (8times 2)                              ;16
 #+END_SRC
