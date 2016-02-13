@@ -116,3 +116,20 @@ defun定义的函数在全局作用域可见,即使这个定义是嵌套在另�
 
   (8times 2)                              ;16
 #+END_SRC
+
+* 判断函数的互补函数
+使用组合函数的函数可以很容易得到一个判断函数的互补函数.
+#+BEGIN_SRC emacs-lisp
+  (defun complement (pred)
+    "返回判断函数`pred'的互补函数not-pred"
+    (compose-fns #'not pred))
+
+  (defun 1-or-2-p (a)
+    (or (= 1 a)
+        (= 2 a)))
+
+  (fset 'other-p (complement #'1-or-2-p))
+
+  (other-p 1)                             ;nil
+  (other-p 3)                             ;t
+#+END_SRC
