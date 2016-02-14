@@ -1,0 +1,35 @@
+#+TITLE: input-output
+#+AUTHOR: DarkSun
+#+CATEGORY: emacs-lisp-faq
+#+DATE: [2016-02-06 周六 11:55]
+#+OPTIONS: ^:{}
+
+* 重定向程序的标准输出
+当在程序中使用print系列函数(print,princ,prin1)且未指定第三个参数时,可以通过修改`standard-output'的值来重定向输出的位置.
+
+由于elisp默认使用动态作用域,因此通常的方法为使用let为`standard-output'绑定临时值
+#+BEGIN_SRC emacs-lisp
+  (let ((standard-output xxx))
+    bodys...)
+#+END_SRC
+
+其中`standard-output'的值可以是
+
++ 一个buffer :: 输出会插入到指定buffer的光标处
++ 一个mark :: 输出会插入到mark的位置处
++ 一个函数 :: 输出的每个字符都会调用一次该函数
++ 一个symbol :: 调用该symbol的函数定义
++ t :: 在echo area显示输出
+
+需要说明的是, *elisp中没有宏with-open-file* 但我们可以尝试自定义该宏:
+#+BEGIN_SRC emacs-lisp
+  (defmacro with-output-to-file (file &rest bodys)
+    ""
+    (declare (indent 1) (debug t))
+    `(with-temp-file ,file
+       (let ((standard-output (current-buffer)))
+         ,@bodys)))
+
+  (with-output-to-file "/tmp/t.log"
+    (print "hello"))
+#+END_SRC
