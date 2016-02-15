@@ -1,6 +1,14 @@
 emacs lisp faq
 
+[[file:async.org][async.org]]
+
 [[file:date-and-times.org][date-and-times.org]]
+
+[[file:d-bus.org][d-bus.org]]
+
+[[file:eieio.org][eieio.org]]
+
+[[file:ert.org][ert.org]]
 
 [[file:file.org][file.org]]
 
@@ -11,4 +19,6 @@ emacs lisp faq
 [[file:input-output.org][input-output.org]]
 
 [[file:String.org][String.org]]
+
+[[file:url.org][url.org]]
 
