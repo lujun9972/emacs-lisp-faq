@@ -1,0 +1,605 @@
+#+TITLE: eieio
+#+AUTHOR: DarkSun
+#+OPTIONS: ^:{}
+
+* 与CLOS的区别
++ 类名可以作为函数来构造对象.
+  #+BEGIN_SRC emacs-lisp
+    (defclass record () ; No superclasses
+      ((name :initarg :name
+             :initform ""
+             :type string
+             :custom string
+             :documentation "The name of a person.")
+       (birthday :initarg :birthday
+                 :initform "Jan 1, 1970"
+                 :custom string
+                 :type string
+                 :documentation "The person's birthday.")
+       (phone :initarg :phone
+              :initform ""
+              :documentation "Phone number."))
+      "A single record for tracking people I know.")
+
+     (setq rec (record "Eric" :name "Eric" :birthday "June" :phone "555-5555"))
+  #+END_SRC
+
++ eieio无法为内建类型分发method,也无法根据多个参数类型来分发method
+
++ eieio不支持自定义的metaclass,只有唯一的一个metaclass:`eieio-default-superclass'
+
++ eieio不支持EQL specialization
+
++ `:around' 方法标签无用
+
++ 每个class中的slot,都默认有`:initarg'标签
+
++ Mock object initializers
+
+  Each class contains a mock object used for fast initialization of
+  instantiated objects.  Using functions with side effects on object
+  slot values can potentially cause modifications in the mock object.
+  EIEIO should use a deep copy but currently does not.
+
+* 定义类
++ (defclass class-name superclass-list slot-list &rest options-and-doc)
+
+  class-name指定了定义的类名
+
+  superclass-list指定了该类继承于哪些类. EIEIO支持多重继承,但若多个父类有同一个slot,则最左边的父类的slot生效.
+
+  slot-list指定了该类有哪些属性
+
+  options-and-doc指定了该类的说明,它支持以下几个options:
+
+  - 字符串说明 对该类的说明性文字
+
+  - :abstract 指定该类是否为抽象类,抽象类无法实例化.
+
++ (CLASS-NAME-p object)
+
++ (CLASS-NAME-child-p object)
+
++ eieio-error-unsupported-class-tags
+
+  若为非nil,则`defclass'发现slot-list中有不支持的tag时,会抛出错误.
+
++ (slot-boundp object slot)
+  
+  判断object的slot是否有值
+
++ (slot-makeunbound object slot)
+  
+  使得object的slot不再绑定值
+
+** slot-list说明
+slot-list的格式为:
+#+BEGIN_SRC emacs-lisp
+  (SLOT-NAME :TAG1 ATTRIB-VALUE1
+             :TAG2 ATTRIB-VALUE2
+             ;; .....
+             :TAGN ATTRIB-VALUEN)
+#+END_SRC
+
+支持的TAG有:
+
++ :initarg
+
+  构造函数中初始化该slot的参数名称.
+
++ :initform
+
+  指定该slot的默认值. 
+
+  *NOTE:* 传递給initform的值,会自动quoted.
+
++ :type
+
+  指定并校验该slot的数据类型,目前支持的数据类型有
+
+  - symbol
+
+  - number
+
+  - class-name
+
+  - (or type1 type2 ...)
+
++ :allocation
+
+  指定该slot为类成员变量还是对象成员变量. 可选值为:class或:instance
+
+  默认为:instance
+
++ :documentation
+
+  该slot的相关说明
+
++ :accessor
+
+  产生一个generic函数用于读写object中的该slot
+
++ :write
+
+  产生一个generic函数来对object中的slot赋值
+
++ :reader
+
+  产生一个generic函数来读取object中slot的值
+
++ :custom
+
+  当customize一个object时,该配置项的类型, 详情参见defcustom的说明.
+
++ :label
+
+  当customize一个object时,该配置项的名称, 详情参见defcustom的说明.
+
++ :group
+
+  当customize一个object时,该配置项的所属组, 详情参见defcustom的说明.
+
++ :printer
+
+  该参数接收一个表示函数的symbol. 该函数接收slot value作为唯一的参数.
+
+  The function in ‘object-write’ will write the slot value out to a printable form on ‘standard-output’.
+
+  The output format MUST be something that could in turn be interpreted with ‘read’ such that the object can be brought back in from the output stream.
+
++ :protection
+
+  指定该slot的权限. 目前支持以下值
+
+  - :public
+    
+    任何地方都能访问该slot
+
+  - :protected
+    
+    只有同类或子类的方法才能访问该slot
+
+  - :private
+
+    只有同类的方法才能访问该slot
+
+** options-and-doc说明
+options-and-doc指定了该类的说明,它支持以下几个options:
+
++ 字符串说明 
+
+  若字符串在slot-list后出现,且没有在`:documentation' tag后面,则该字符串为Emacs-style documentation string.
+
++ :documentation
+
+  该类的documentation string. 但若已经提供了Emacs-style documentation string. 则会忽略该option
+
++ :allow-nil-initform
+
+  若该option为非nil,则即使slot的`:type' option未指明可以为nil,也允许其`:initform'为nil
+
++ :abstract 
+
+  指定该类是否为抽象类,抽象类无法实例化.
+
++ :custom-groups
+
+  This is a list of groups that can be customized within this class.
+
+  This slot is auto-generated when a class is created and need not be specified. 
+
+  It can be retrieved with the ‘class-option’ command, however, to see what groups are available.
+
++ :method-invocation-order
+
+  该option控制了多继承情况下,同名`:primary'方法的调用顺序. 目前支持的value有:
+
+  - :breadth-first
+
+  - :depth-first
+
+  - :c3
+
++ :metaclass
+
+  未实现
+
++ :default-initargs
+
+  未实现
+
+* 创建对象
+可以通过类名或make-instance函数来创建对象
+
++ (CLASS-NAME object-name &rest slots)
+  
+  创建名为object-name的类型为CLASS-NAME的对象.
+
++ (make-instance class-symbol &rest initargs)
+  
+  INITARGS is a property list with keywords based on the ‘:initarg’ for each slot. 
+  #+BEGIN_SRC emacs-lisp
+    (make-instance 'foo :slot1 value1 :slotN valueN)
+  #+END_SRC
+
+  *NOTE:* initargs一般为一个由keyword和value组成的plist,但若第一个元素为字符串类型,则该字符串作为该类的名称.
+
+  在EIEIO中,类的构造函数在打印时需要有类的名称.  the class is used as the name slot instead when INITARGS doesn’t start with a string.
+
+* 访问slots
++ 宏(oset object slot value)
+  
+  设置object中的slot值为value,该宏返回参数VALUE
+
++ 宏(oset-default class slot value)
+  
+  设置类class中slot的`:initform'初始值为value
+
++ 宏(oref obj slot)
+  
+  获取obj中slot的值,可以通过setf设置该slot的值
+
++ 宏(oref-default obj slot)
+  
+  获取OBJ中slot的`:initform'默认值
+
++ (slot-value object slot)
+  
+  获取object中slot的值, 与`oref'不同的是,slot需要被引用
+
++ (set-slot-value object slot value)
+  
+  设置object中slot的值, 与`oset'不同的是,slot需要被引用
+
++ (slot-makeunbound object slot)
+  
+  unbind object中的slot, 若该slot已经是unbound状态,则抛出错误
+
++ (object-add-to-list object slot item &optional append)
+  
+  添加`ITEM'到object的slot中,slot的值类型应该为list. 若slot已经包含了该ITEM,则不再继续添加. 使用`equal'进行比较
+
+  若slot为unbound状态,则slot的值变为'(ITEM)
+
++ (object-remove-from list object slot item)
+  
+  从object的slot中,删除ITEM. 使用`equal'进行比较
+
++ (with-slots spec-list object &rest body)
+  
+  静态绑定spec-list中的值到object的slot中,并在该静态环境下执行BODY.
+
+  SPEC-LIST的格式与`let'及其类似: 
+  #+BEGIN_SRC emacs-lisp
+    ((VAR1 SLOT1)
+     SLOT2
+     SLOTN
+     (VARN+1 SLOTN+1))
+  #+END_SRC
+  这里每个VAR都是一个与slot相关联的局部变量. 若未明确为某个SLOT设置关联的VAR,则默认创建与slot同名的VAR.
+
+  下面是一个例子
+  #+BEGIN_SRC emacs-lisp
+    (defclass myclass () (x :initarg 1))
+    (setq mc (make-instance 'myclass))
+    (with-slots (x) mc x)                     ; => 1
+    (with-slots ((something x)) mc something) ; => 1
+  #+END_SRC
+* 定义方法
+** generics
+每个EIEIO方法都有一个对应的generic. 该generic并未有具体的定义.
+
++ (defgeneric method arglist [doc-string])
+  
+  无需自己调用`defgeneric',因为`defmethod'会在需要时自动调用`defgeneric'
+
+  若method已经是一个function了,则`defgeneric'会抛出错误.
+** methods
++ (defmethod method [:before|:primary|:after|:static] arglist [doc-string] forms)
+  
+  创建名为METHOD的方法. 该方法仅根据第一个参数的类型分发. 若第一个参数并未指定类型,则表示该方法适用于任何object,此方法则被称为"default method"
+  
+  `:before',`:after',`:primary'指定了该方法的执行顺序,默认为`:primary'
+
+  If multiple methods and default methods are defined for the same method and class, they are executed in this order:
+
+  1. method :before
+  2. default :before
+  3. method :primary
+  4. default :primary
+  5. method :after
+  6. default :after
+     
+
+
+  `:static'则指明该method为类方法. 类方法的第一个参数可能为对象,也可能为类. 因此一般会使用`oref-default'或`oset-default'这类既可以作用于对象也可以作用于类的函数.
+
+
+
++ (call-next-method &optional replacement-args)
+
+  
+  该函数用于子类method中调用基类method. 
+
+  若参数REPLACEMENT-ARGS为非nil,则使用该指定参数代替原始的`eieio-generic-call-arglist'
+
++ (next-method-p)
+  
+  判断是否存在可被调用的基类method. Returns a list of lambda expressions which is the ‘next-method’ order.
+
+* 其他方法
+** Predicates and Utilities
++ (find-class symbol &optional error)
+  
+  返回SYMBOL表示的class.
+
+  参数error表示若未找到SYMBOL表示的class,是否抛出`wrong-argument-type' error.
+
++ (class-p symbol)
+  
+  SYMBOL是否表示一个class
+
++ (slot-exists-p object-or-class slot)
+  
+  OBJECT-OR-CLASS 是否有SLOT
+
++ (slot-boundp object-or-class slot)
+  
+  OBJECT-OR-CLASS的SLOT是否绑定了值
+
++ (eieio-class-name class)
+  
+  以格式"#<class CLASSNAME>",返回class的名称
+
++ (class-option class option)
+  
+  获取class定义时的指定option的值
+
++ (eieio-object-class obj)
+  
+  返回OBJ的class symbol
+
++ (eieio-object-class-name obj)
+  
+  以格式"#<class CLASSNAME>",返回obj的class的名称
+
++ (eieio-class-parents class)
+  
+  获取class的直接父类列表
+
++ (eieio-class-parents-fast class)
+  
+  类似(eieio-class-parents class),但它是宏,且不做类型检查
+
++ (eieio-class-children class)
+  
+  返回继承至CLASS的子类列表
+
++ (eieio-chass-children-fast class)
+  
+  类似(eieio-class-children class),但不做检查
+
++ (same-class-p obj class)
+  
+  OBJ的类型是否 *刚好就是* 为class
+
++ (same-class-fast-p obj class)
+  
+  类似(same-class-p obj class),但不作类型检查
+
++ (object-of-class-p obj class)
+  
+  obj的类型是否属于CLASS,包括CLASS的子类
+
++ (child-of-class-p child class)
+  
+  CHILD是否为CLASS的子类
+
++ (generic-p method-symbol)
+  
+  METHOD-SYMBOL是否为generic function,而不是一般的function
+** Association Lists
++ (object-assoc key slot list)
+  
+  该函数从LIST中获取指定SLOT的值为KEY的第一个object.
+
+  参数LIST中的元素为各个object. 且 *不需要每个object都具有名为SLOT的属性*
+
++ (object-assoc-list slot list)
+  
+  根据LIST中object的SLOT值产生一个alist.
+  
+  该alist中每个元素的car为object的slot的值,cdr为object
+
++ (eieio-build-class-alist &optional base-class)
+  
+  返回关于当前已定义类的alist.
+
+  参数BASE-CLASS指定了只返回BASE-CLASS及其子类的信息
+** Introspection
++ (object-slots obj)
+  
+  返回OBJ中的所有的 *public slot*
+
++ (class-slot-initarg class slot)
+  
+  获取CLASS定义中指定SLOT的`:initarg'参数值, 若未定义该参数值,则返回nil.
+
+* Customizing Objects
++ (eieio-customize-object object)
+  
+  使用customzie的方式修改object, 由于采用"in place"的方式修改object,因此任何引用到该object的变量都会收到影响
+
++ (eieio-custom-widget-insert object flags)
+
+* 预定义的Classes
+若创建class时未指定parent class,则默认继承至`eieio-default-superclass'.
+
+除此之外,EIEIO还预定义了其他一些有用的类
+
+** eieio-instance-inheritor: Enable value inheritance between instances
+
+这种类型的对象可以拥有所谓的父对象. 若子对象的某slot为unbound,则会向上查找父对象的同名slot的值.
+
+要从父对象中派生出一个子对象,只需要使用`clone'方法即可,clone出来的对象为原对象的子对象,且各个slot默认为unbound
+
+** eieio-instance-tracker: 追踪实例化对象的类
+
+该类会维护一个列表,用于追踪所有的实例化对象.
+
+在构造这种类的对象时,需要将名为`TRACKER-SYMBOL'的slot的值初始化为一个由`defvar'创建的symbol. 该symbol的值即为追踪列表
+
+该类的实现机理是定义了一个 =(defmethod initialize-instance :after ((obj eieio-instance-tracker) &optional slots))=,并在该方法中将obj添加到追踪列表中.
+
+由于有一个追踪列表持有对该object的引用,因此elisp无法自动将其识别为可回收对象,因此需要调用 =(delete-instance obj)= 来删除该object
+
++ (eieio-instance-tracker-find key slot list-symbol)
+  
+  该函数从维护列表中找出SLOT的值`equal' KEY的对象. 参数LIST-SYMBOL为表示维护列表的symbol.
+
+** eieio-singleton: 单例类
+
+** eieio-persistent: 允许持久化的类
+
+该类对象的file slot指定了该类会被持久化到哪个文件中. 若该文件名为相对路径,则是指的相对于`eieio-persistent-path-relative'的
+
+该类还有一个名为file-header-line的类slot, 表示通过`object-write'持久化时的header comment.
+
+所有的对象,不管是属于什么类型的,都能保存到文件中,但是该类的对象还有其他一些方案法:
+
++ (eieio-persistent-save (obj eieio-persistent) &optional file)
+  
+  将对象持久化到FILE中,FILE的默认值为obj中的file slot的值
+
++ (eieio-persistent-path-relative (obj eieio-persistent) file)
+  
+  Return a file name derived from FILE which is relative to the stored location of OBJ. 
+
+  This method should be used to convert file names so that they are relative to the save file, making any system of files movable from one location to another.
+
++ (object-write (obj eieio-persistent) &optional comment)
+  
+  类似普通类的`object-write'方法,只是会将参数COMMENT作为注释写到文件中,COMMENT默认值为file-header-line slot的值
+
++ (eieio-persistent-read filename &optional class allow-subclass)
+  
+  从FILENAME中读取持久化的对象,并返回该对象.
+
+  CLASS表示若读取的对象不为CLASS类型,则抛出异常.
+
+  ALLOW-SUBCLASS表示读取的对象能否为CLASS类型的子类.
+
+
+** eieio-named: 该类使用object名称作为`:name' slot的值
+
+该类的对象拥有一个名为`:name'的slot,用于存放object的名称
+
+** eieio-speedbar: 允许speedbar支持你的对象
+
+* Browsing class trees
+通过命令`eieio-browse'能够产生一个buffer,显示所有已加载的类的继承树.
+
+若执行命令时带了prefix argument,则该命令会让你输入class name,并显示指定的class及其子类的继承树
+
+* Default Superclass
+若创建class时未指定parent class,则默认继承至`eieio-default-superclass'.
+
+默认的superclass预定义了许多行为:
+
+** 对象是如何初始化的
+
+类在构造对象时,低层调用了`initialize-instance'方法,而`initialize-instance'方法又会调用`shared-initialize'方法
+
++ (initialize-instance obj &optional slots)
+  
+  初始化OBJ, 参数SLOTS为`make-instance'时传递的参数plist.
+
+  其低层是通过调用`shared-initialize'来设置OBJ的slot的值的
+
++ (shared-initialize obj &optional slots)
+  
+  使用SLOTS设置OBJ的slot值
+  
+** 基础方法
+这些方法是定义在最初始的默认基类中的,因此所有的类都有这些方法
+
++ (clone obj &rest params)
+
+  拷贝一个OBJ的副本,然后根据参数PARAMS来更改OBJ中的slot值.
+
+  *若你想重载该方法,请一定前调用`call-next-method',再修改返回的object*
+
++ (object-print object &rest strings)
+
+  美化OBJECT的输出形式. 默认实现是调用`eieio-object-name'函数
+
+  例如
+  #+BEGIN_SRC emacs-lisp
+    (defclass data-object ()
+      ((value :initarg :value))
+      "Object containing one data slot.")
+
+    (defmethod object-print ((this data-object) &optional strings)
+      "Return a string with a summary of the data object as part of the name."
+      (apply 'call-next-method this
+             (cons (format " value: %s" (oref this :value)) strings)))
+
+    (setq test-object (make-instance 'data-object :value 3))
+    (object-print test-object)
+    ;; => #<data-object test-object value: 3>
+  #+END_SRC
+
++ (object-write obj &optional comment)
+  
+  将OBJ对象以可`read'的方式写到流中. 
+
+  *只有带`:initarg' option的slot会被写入到流中*
+
+** Signal Handing
+
+下面这些函数会在特定的错误情况下抛出signal
+
+通过重载这些方法,你可以修改在特定错误情况发生时的默认行为,甚至忽略这一错误情况.
+
++ (slog-missing object slot-name operation &optional new-value)
+  
+  当尝试操作不存在的slot时会触发该方法.
+
+  参数OPERATION指明了操作SLOT的类型(OPERATION is the type of access that was requested)
+
+  该函数一般被`oref',`oset'和其他直接引用EIEIO object中的slot的函数中调用.
+
+  该函数默认的行为是抛出一个`invalid-slot-name'的异常
+
++ (slot-unbound object class slot-name fn)
+  
+  当尝试读取一个未绑定值的slot时会触发该方法.
+
+  参数FN为抛出该异常的函数.
+
++ (no-applicable-method object method &rest args)
+  
+  当未找到适合OBJECT的方法时触发该函数.
+
+  可以通过重载该方法屏蔽错误,且该函数的返回值会作为原METHOD的返回值
+
++ (no-next-method object &rest args)
+  
+  在无next-method的情况下调用`call-next-method'则会触发该方法.
+
+  默认情况下,该方法抛出`no-next-method'异常.
+
+  若重载该方法使之不抛出异常,则该方法的返回值回座位`call-next-method'的返回值.
+
+** 异常
+EIEIO可能会抛出如下一些异常:
+
++ invalid-slot-name obj-or-class slot
+
++ no-method-definition method arguments
+
++ no-next-method class argument
+
++ invalid-slot-type slot spec value
+
++ unbound-slot object class slot

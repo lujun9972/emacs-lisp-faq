@@ -1,0 +1,298 @@
+#+TITLE: ert
+#+AUTHOR: Administrator
+#+CATEGORY: emacs, elisp
+#+DATE: [2016-01-13 周三 10:12]
+#+OPTIONS: ^:{}
+
+* ERT简介
+
+ERT是一个定义测试案例的工具. 所谓测试案例实际是一段lisp代码,该段代码调用其他代码并检查该端代码的行为是否满足预期.
+
+ERT使用宏`ert-deftest'来定义测试案例,其语法与defun极其类似. 下面是一个例子:
+#+BEGIN_SRC elisp
+  (ert-deftest pp-test-quote ()
+    "Tests the rendering of `quote' symbols in `pp-to-string'."
+    (should (equal (pp-to-string '(quote quote)) "'quote"))
+    (should (equal (pp-to-string '((quote a) (quote b))) "('a 'b)\n"))
+    (should (equal (pp-to-string '('a 'b)) "('a 'b)\n")))
+#+END_SRC
+
+上面的例子定义了一个名为"pp-test-quote"的测试案例,且只有在三个`should'调用都返回非nil的情况下才能通过该测试.
+
+上面的`should'是ERT定义的一个宏,其意义与`cl-assert'一样,只是返回的错误信息更明晰一些.
+
+每个测试案例都应该有一个测试名称与一段该测试案例测试范围的描述.
+其中,测试名称不与正常的elisp函数与变量处于同一个命名空间内,因此该测试名称可以是任意起的,但最好还是遵守elisp的命名规范,将待测试的包名作为测试案例名称的前缀
+
+测试案例名后的`()'暂时无任何意义,但以后可能会扩展其功能.
+
+测试案例的body部分可以是任意代码,但最好不要有副作用. 每个测试案例都应该在做完测试后执行恢复原环境.
+
+* 编写测试案例
+ERT使用宏`ert-deftest'来定义测试案例,其语法格式为:
+#+BEGIN_SRC emacs-lisp
+  (ert-deftest NAME ()
+    [DOCSTRING]
+    [:expected-result RESULT-TYPE]
+    [:tags '(TAG...)]
+    BODY...)
+#+END_SRC
+** should宏说明
+
++ shold
+
+  宏`should'的功能与cl-assert类似,但是它会分析要监测的form,并以更好的形式输出调试信息
+
++ should-not
+
+  除了should宏外,ERT还提供了`should-not'来确保被监控的form返回nil.
+
++ should-error
+
+  `should-error'来检查被监控的form是否抛出异常. 
+
+  should-error与shold,should-not不同点在于,它可以接收一个可选的:type参数,用于指明抛出的error类型.
+
+  若未指定:type参数,则表示任一类型的error皆可.
+
+  下面是一个should-error的例子
+  #+BEGIN_SRC emacs-lisp
+  (ert-deftest test-divide-by-zero ()
+    (should-error (/ 1 0)
+                  :type 'arith-error))
+  #+END_SRC
+  
+  should-error的返回值为form抛出error的描述,其格式为(ERROR-SYMBOL . DATA)
+
+** 预期的错误
+
+对于某些有些不太严重的BUG,若想着以后再修改,但又觉得ERT每次都显示一大段的调试信息太烦人了,则可以在ERT测试时明确指定某些案例的预期结果为failed.
+
+对于哪些指定了预期结果为failed的案例, ERT会在process bar上显示为小写的`f',也会把它统计入失败次数中,但不会显示具体的出错信息.
+
+指定某个案例的预期结果为failed的方式是,在测试案例doc-string后添加 ~:expected-result :failed~. 下面是一个例子
+#+BEGIN_SRC emacs-lisp
+  (ert-deftest future-bug ()
+    "Test `time-forward' with negative arguments.
+       Since this functionality isn't implemented, the test is known to fail."
+    :expected-result :failed
+    (time-forward -1))
+#+END_SRC
+
+*事实上,:expected-result后可以接任一一个form,只要该form的执行结果返回:failed或:passed即可*. 例如:
+#+BEGIN_SRC emacs-lisp
+  (ert-deftest foo ()
+    "A test that is expected to fail on Emacs 23 but succeed elsewhere."
+    :expected-result (if (string-match "GNU Emacs 23[.]" (emacs-version))
+                         :failed
+                       :passed)
+    ...)
+#+END_SRC
+
+** 测试案例及其环境
+
+有些测试案例的执行需要有一些前置条件,例如需要Emacs支持某项feture,或某个外部程序必须存在才能测试这些测试案例.
+
+这是需要用到宏`skip-unless'. 下面是一个例子
+#+BEGIN_SRC emacs-lisp
+  (ert-deftest test-dbus ()
+    "A test that checks D-BUS functionality."
+    (skip-unless (featurep 'dbusbind))
+    ...)
+#+END_SRC
+
+*注意,测试案例不应依赖于Emacs的配置情况,也不应修改任何外部环境(包括Emacs配置或操作系统层面的任何东西)*
+
+** 其他
+
+下面是一个复杂的测试案例
+#+BEGIN_SRC emacs-lisp
+  (ert-deftest ert-test-record-backtrace ()
+    (let ((test (make-ert-test :body (lambda () (ert-fail "foo")))))
+      (let ((result (ert-run-test test)))
+        (should (ert-test-failed-p result))
+        (with-temp-buffer
+          (ert--print-backtrace (ert-test-failed-backtrace result))
+          (goto-char (point-min))
+          (end-of-line)
+          (let ((first-line (buffer-substring-no-properties
+                             (point-min) (point))))
+            (should (equal first-line
+                           "  signal(ert-test-failed (\"foo\"))")))))))
+#+END_SRC
+
+这其中涉及到很多未见过的函数用法:
+
++ `make-ert-test'创建一个测试案例对象. 其:body参数指明了案例的测试案例的内容为立即抛出失败.
++ `ert-fail'中止当前测试,并标记该测试失败.
++ `ert-run-test'运行指定的测试案例,并返回测试结果
++ `ert-test-failed-p'判断指定的测试结果是否为失败
++ `ert-test-failed-backtrace'抽取出失败结果中的backtrace信息
++ `ert--print-backtrace'输出backtrace信息
++ *上面例子中只对比backtrace的第一行的原因在于,剩下的详细内容与ERT的内部实现和是否编译有关*
+* 运行测试案例
+
+ERT支持两种方式运行测试案例:交互式与批处理式
+
+交互式测试常常用于开发时,而批处理则常用于确保测试结果与Emacs的开发环境无关,也可以在makefile中调用测试.
+
+** 交互式测试
+
+通过在Emacs中执行 =M-x ert= 可以交互地测试案例.
+
+ERT会弹出新的major-mode为ert-results的buffer来显示案例的测试结果. 如下是一个例子
+#+BEGIN_SRC text
+  Selector: t
+  Passed:  31
+  Skipped: 0
+  Failed:  2 (2 unexpected)
+  Total:   33/33
+
+  Started at:   2008-09-11 08:39:25-0700
+  Finished.
+  Finished at:  2008-09-11 08:39:27-0700
+
+  FF...............................
+
+  F addition-test
+      (ert-test-failed
+       ((should
+         (=
+          (+ 1 2)
+          4))
+        :form
+        (= 3 4)
+        :value nil))
+
+  F list-test
+      (ert-test-failed
+       ((should
+         (equal
+          (list 'a 'b 'c)
+          '(a b d)))
+        :form
+        (equal
+         (a b c)
+         (a b d))
+        :value nil :explanation
+        (list-elt 2
+                  (different-atoms c d))))
+#+END_SRC
+
+测试结果由以下几个部分组成:
+
++ 最开头是一个测试结果的汇总信息. 包括测试了哪些案例,有多少个通过了,多少个失败了,测试的开始时间与结束时间
+
++ 后面的由.和F组成的进度条表示案例测试的进度. 当案例测试时会增加一个字符,其中`.'表示测试通过,`F'表示测试失败.
+
++ 再下面是失败测试案例的详细结果
+
+*** ert-results buffer说明
+
+在ert-results buffer中,每个函数/宏的名字都是一个button,点击该button会跳到该函数/宏的定义处.
+
++ `TAB'/`S-TAB' :: 在各button之间跳跃
+
++ `r' :: 重新运行当前的测试案例
+
++ `d' :: 重新运行当前的测试案例同时开启debugger
+
++ `.' :: 跳到当前测试案例的定义处
+
++ `b' :: 显示 *失败案例* 的backtrace
+
++ `l' :: 显示测试案例中的`should'列表
+
++ `m' :: 若测试案例中有用`message'函数显示信息,则按`m'会显示出这些信息
+
++ `L' :: 默认情况下,失败细节中的长表达式会使用`print-length'和`print-level'来简化显示,在失败案例中按L会显示更多细节.
+
++ `D' :: 若重命名或删除过某些测试案例,但ERT可能还会记得那些过期的案例. 按`D'键会使得ERT忘掉这些过期的案例
+
+** 批处理式测试
+
+ERT提供了两个方法来实现批处理式的测试:`ert-run-tests-batch'与`ert-run-tests-batch-and-exit'
+
+下面是一个批处理测试的例子
+#+BEGIN_SRC sh
+  emacs -batch -l ert -l my-tests.el -f ert-run-tests-batch-and-exit
+#+END_SRC
+
+上面这条命令会启动一个Emacs并进入batch模式,然后加载ERT与`my-tests.el'(案例文件),再运行其中定义的所有案例.
+
+若所有的案例都通过,则该命令返回0,否则返回一个非0值. 
+
+该命令还会把测试进度与测试信息输出到stdout.
+
+** 测试案例选择器
+
+像`ert'这样的命令会要求输入一个 ~test selector~. 该test-selector决定了要测试哪些案例.
+
+| test-selector              | 说明                                                                       |
+|----------------------------+----------------------------------------------------------------------------|
+| nil                        | 无案例                                                                     |
+| t                          | 所有案例                                                                   |
+| :new                       | 没有测试过的案例                                                           |
+| :failed / :unexpected      | 测试失败的案例                                                             |
+| :passed / :expected        | 测试成功的案例                                                             |
+| 正则表达式字符串           | 名字匹配该正则表达式的案例                                                 |
+| test对象(例如ert-test对象) | 该指定的test                                                               |
+| 符号                       | 与该符号同名的案例                                                         |
+| (member TESTS...)          | 由TESTS指定的一系列的测试案例. 其中TESTS为一个由symbol或test对象组成的列表 |
+| (eql TEST)                 | 由TEST指定的测试案例,其中TEST为symbol或test对象                            |
+| (and SELECTORS...)         | 符合所有SELECTORS条件的测试案例                                            |
+| (or SELECTORS)             | 符合任一SELECTORS条件的测试案例                                            |
+| (not SELECTOR)             | 不符合SELECTOR条件的测试案例                                               |
+| (tag TAG)                  | 被标注上TAG的所有测试案例                                                  |
+| (satisfiers PREDICATE)     | 所有符合PREDICATE的测试案例. PREDICATE接收一个测试案例作为参数并返回nil或非nil |
+
+** 理解ERT中`should'宏的出错信息
+
+`should'宏在检查失败时会输出类似下面的出错报告:
+#+BEGIN_EXAMPLE
+  F addition-test
+      (ert-test-failed
+       ((should
+         (=
+          (+ 1 2)
+          4))
+        :form
+        (= 3 4)
+        :value nil))
+#+END_EXAMPLE
+
+ERT会输出should表达式的内容,并显示不匹配的原因.
+
+若在`should'中使用了类似equal这样的判断函数,则ERT会提供类似下面的出错信息
+#+BEGIN_EXAMPLE
+  F list-test
+      (ert-test-failed
+       ((should
+         (equal
+          (list 'a 'b 'c)
+          '(a b d)))
+        :form
+        (equal
+         (a b c)
+         (a b d))
+        :value nil :explanation
+        (list-elt 2
+                  (different-atoms c d))))
+#+END_EXAMPLE
+在上面这个案例中,ERT告诉我们两个列表在索引为2的地方出现差异,一个为c,一个为d
+
+*ERT只能解释那些注册过的判断函数的失败原因,但提供了方式供用户注册其他的判断函数*
+
+
+* 扩展ERT
+
+** 注册自己的判断函数的解释函数
+
+所谓判断函数的解释函数,是指这样一种函数,它接受与判断函数相同的参数并返回一个解释(). 
+
+该解释可以是任意对象,但其输出格式需要能被read回来,且解释的内容一般包括判断函数返回判断值的原因.
+
+若判断函数的返回值没什么好解释的,则解释函数直接返回nil即可.
+
+*要为判断函数注册响应的解释函数,只需要在判断函数的symbol上添加一个`ert-explainer'属性,该属性的值为解释函数的symbol*
+

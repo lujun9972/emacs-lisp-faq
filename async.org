@@ -1,0 +1,89 @@
+#+TITLE: async
+#+AUTHOR: DarkSun
+#+CATEGORY: emacs, elisp
+#+DATE: [2015-08-23 周日 18:10]
+#+OPTIONS: ^:{}
+* async简介
+async包提供了在Emacs中异步执行elisp代码的一种方式
+* API说明
+** (async-start START-FUNC FINISH-FUNC)
+
+async-start会创建一个Emacs子进程,并由子进程执行START-FUNC. 子进程执行完START-FUNC后,START-FUNC的返回值会作为参数触发父进程Emacs中的FINISH-FUNC调用.
+
+下面是个例子:
+#+BEGIN_SRC emacs-lisp
+  (async-start
+         ;; What to do in the child process
+         (lambda ()
+           (message "This is a test")
+           (sleep-for 3)
+           222)
+
+         ;; What to do when it finishes
+         (lambda (result)
+           (message "Async process done, result should be 222: %s" result)))
+#+END_SRC
+
+这里FINISH-FUNC一般为带一个参数的函数,但也可以是nil或直接不填. 这种情况下可以在后期使用`async-get'函数获取`START-FUNC'的值. (在调用async-get函数前,会有一个*emacs*进程一直存在)
+
+若对`START-FUNC'的返回值不感兴趣,则`FINISH-FUNC'的值可以为'ingore
+
+async-start返回一个process对象,该process对象被称为 *FUTURE*
+
+
+** (async-get FUTURE)
+若`async-start'中的FINISH-FUNC为nil或没填时,可以使用`async-get'函数来阻塞式地获取`START-FUNC'的返回值.
+
+这里参数`FUTURE'为`async-start'或`async-start-process'的返回process对象.
+
+下面是一个例子
+#+BEGIN_SRC emacs-lisp
+  (let ((proc (async-start
+                     ;; What to do in the child process
+                     (lambda ()
+                       (message "This is a test")
+                       (sleep-for 3)
+                       222))))
+
+          (message "I'm going to do some work here") ;; ....
+
+          (message "Waiting on async process, result should be 222: %s"
+                   (async-get proc)))
+#+END_SRC
+
+** (async-start-process NAME PROGRAM FINISH-FUNC &rest PROGRAM-ARGS)
+
+使用`PROGRAM-ARGS'作为命令参数异步执行`PROGRAM'. 当`PROGRAM'执行完毕后,以该process对象为参数调用`FINISH-FUNC'.
+
+`PROGRAM'执行时的当前工作目录被设置为变量`DEFAULT-DIRECTORY'的值.
+
+若`FINISH-FUNC'为nil,则`async-start-process'一直等到`PROGRAM'执行完毕后才返回 *FUTURE* 对象
+
+** (async-ready FUTURE)
+
+判断`FUTURE'是否执行完毕
+
+** (async-wait FUTURE)
+
+等待FUTURE,直到其执行完毕
+
+** (async-inject-variables INCLUDE-REGEXP &optional PREDICATE EXCLUDE-REGEXP)
+
+该函数会生成一个`setq'语句,该语句常用于为子Emacs进程置所有匹配`INCLUDE-REGEXP'和符合`PREDICATE'判定的变量为当前主Emacs中的值.
+
+若设置了`EXCLUDE-REGEXP',则标示了哪些变量即使符合INCLUDE-REGEXP或PREDICATE的条件,也要排除在外.
+
+例如
+#+BEGIN_SRC emacs-lisp
+  (async-start
+         `(lambda ()
+            (require 'smtpmail)
+            (with-temp-buffer
+              (insert ,(buffer-substring-no-properties (point-min) (point-max)))
+              ;; Pass in the variable environment for smtpmail
+              ,(async-inject-variables "\\`\\(smtpmail\\|\\(user-\\)?mail\\)-")
+              (smtpmail-send-it)))
+         'ignore)
+#+END_SRC
+
+

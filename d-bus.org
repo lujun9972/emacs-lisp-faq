@@ -1,0 +1,346 @@
+#+TITLE: d-bus
+#+AUTHOR: DarkSun
+#+CATEGORY: emacs
+#+DATE: [2015-08-07 周五 10:37]
+#+OPTIONS: ^:{}
+* D-Bus概述
+D-Bus是一个本机进程间通讯的机制. 通讯过程基于消息来进行,消息中的数据是以结构化的方式,而不是基于字节流的方式来承载的.
+
+D-Bus机制有两个基本的消息总线:"system bus"与"session bus". 
+其中,一台机上只能有一个"system bus",其负责各种系统层面的消息通讯,例如更改了硬件配置之类的.
+一台机上则可能有多个"session bus",其负责单个用户session层面的消息通讯.
+
+每个连接上总线的客户端程序,都必须在该总线上注册一个唯一的标示名称. 该名称总是以`:'开头的,类似`:1.42'这样
+
+此外,客户端程序还可以在总线上注册"known name",该名称不以`:'开头,且可以由多个`.'分隔成几段,类似`org.gnu.emacs'这样. 
+若多个程序注册了同一个"known name",则这些程序排成一个队列,只有第一个注册该名字的application可以通过改名称引用到. 
+当第一个注册该名称的程序断开与总线的连接时,队列中第二个的程序成为该"known name"的所有者.
+
+一个程序安装一个到多个的 *objects*. 这些object由"object path"所标识. "object path"看起来与文件系统的路径很接近,类似`/org/gnu/Emacs'这样.
+
+一个程序可以向一个object发送请求,也即发送一些消息給object,然后从object处接收一些消息作为请求的结果.
+由于发送消息类似与函数中的输入参数,返回的消息类似输出消息,因此在D-Bus中,向object发送的请求也被称为 *方法*
+
+还有一类的通讯被称为 *信号*,这种信息由object发出并被所有注册了该类信号的程序所接收.
+
+一个object所支持的 *方法* 和 *信号* 称为该object的 *接口*. 
+每个接口在D-Bus中也有其唯一的名称,该名称以`.'分隔成多个层级,类似`org.gnu.Emacs.TextEditor'或`org.gnu.Emacs.FileManager'这样. 且一个object能支持多个接口??.
+* 探测D-Bus服务
+** 探测D-Bus版本
+有两个变量可以用于探测D-Bus的版本:
++ dbus-compiled-version
+
+  该变量值为一个字符串,指明了编译Emacs时的D-Bus版本. nil表示不知道哪个版本.
+
++ dbus-runtime-version
+
+  该变量值为一个字符串,指明了Emacs运行环境所使用的D-Bus版本. nil表示在运行期无法知晓D-Bus的版本
+
+** 探测D-Bus名称
+有许多函数可以用来探测总线中已注册了哪些名字. 这些函数在内部都使用了基本接口`org.freedesktop.DBus',该接口能被总线中的任意object所支持.
+
++ (dbus-list-activatable-names &optional bus)
+  
+  该函数返回指定总线中的所有已激活的服务名称(activated service names). 返回值为一个字符串列表
+
+  参数`bus'可以使`:system'或`:session'. 默认为`:system'
+
+  #+BEGIN_SRC emacs-lisp
+    ;; Check, whether the document viewer can be accessed via D-Bus.
+    (member "org.gnome.evince.Daemon"
+            (dbus-list-activatable-names :session))
+  #+END_SRC
+
+  可激活的服务存储在 服务注册文件(service registration file)中. 在linux操作系统下,该文件存在目录`/usr/share/dbus-1/system-services'或`/usr/share/dbus-1/services/'目录下.
+
+  可激活的服务,不需要事先在总线上注册才能写入服务注册文件.
+
++ (dbus-list-names bus)
+  
+  返回指定总线中已注册的所有服务名称.
+
+  返回值为字符串列表
+
+  参数`bus'必须是`:system'或`:session'
+
++ (dubs-list-known-name bus)
+
+  列出指定总线中的所有"known name". 若服务名称不是以`:'开头的,则该服务拥有"known name"
+
+  返回值为字符串列表
+
+  参数`bus'必须是`:system'或`:session'
+
++ (dubs-list-queued-owners bus service)
+  
+  获取指定总线上注册为同一个"known name"的服务标识名称队列.
+  
+  返回值为字符串列表
+
+  参数`bus'必须是`:system'或`:session'
+
++ (dbus-get-name-owner bus service)
+
+  返回`bus'总线上,"known name"为`service'所属的那个服务的标识名称.
+
+  返回值为字符串
+
+  参数`bus'必须是`:system'或`:session'
+
++ (dbus-ping bus service &optional timeout)
+  
+  检查服务名为`SERVICE'的服务是否已经注册到名为`BUS'的总线上.
+
+  *若名为`SERVICE'的服务尚未启动,则会尝试启动该服务.* 若希望在不启动该服务的情况下探测指定的服务是否注册,则使用如下方法:
+  #+BEGIN_SRC emacs-lisp
+    (member service (dbus-list-known-names bus))
+  #+END_SRC
+
+  参数`bus'必须是`:system'或`:session'
+  
+  参数`SERVICE'必须为字符串类型.
+
+  参数`TIMEOUT'指定了超时事件,单位为毫秒. 默认为25000
+
+  函数返回值为nil或t
+
+  例如:
+  #+BEGIN_SRC emacs-lisp
+    (message
+     "%s screensaver on board."
+     (cond
+      ((dbus-ping :session "org.gnome.ScreenSaver" 100) "Gnome")
+      ((dbus-ping :session "org.freedesktop.ScreenSaver" 100) "KDE")
+      (t "No")))
+  #+END_SRC
+
++ (dubs-get-unique-name bus)
+  
+  返回Emacs在`bus'总线上注册的标识名称.
+
+  参数`bus'必须是`:system'或`:session'
+  
+** 探测D-Bus服务的细节
+可以在运行期动态地探测到服务所发布的接口.
+*** 探测结果的格式说明
+探测的返回结果为XML格式的报文. 其根节点总是为`node'元素,且可能有一个`name'属性,用于存储该服务对象的绝对object path.
+
+`node'节点下是`interface'节点,其有一个`name'属性,用于存储该接口的完整名称. 且默认接口`org.freedesktop.DBus.Introspectable'在任意对象中都存在.例如
+#+BEGIN_SRC xml
+  <node name="/org/bluez">
+    <interface name="org.freedesktop.DBus.Introspectable">
+      …
+    </interface>
+    <interface name="org.bluez.Manager">
+      …
+    </interface>
+    <interface name="org.bluez.Database">
+      …
+    </interface>
+    <interface name="org.bluez.Security">
+      …
+    </interface>
+    <node name="service_audio"/>
+    <node name="service_input"/>
+    <node name="service_network"/>
+    <node name="service_serial"/>
+  </node>
+#+END_SRC
+
+`interface'节点下的子节点可能是`method'节点,`signal'节点,`property'节点或`annotation'节点.
+
++ `method'节点
+
+  `method节点'表示指定接口拥有的方法,它有一个`name'属性用于表示方法名称.
+
+  `method'节点拥有多个`arg'子节点,表示方法的参数.
+
+  `arg'节点拥有三个属性`name',`type'和`direction'.其中
+  
+  - `name'属性是可选的,表示参数名.
+
+  - `type'属性表示参数类型,参见[[info:dbus#Type%20Conversion][Type Conversion]] *note 
+
+  - `direction'属性只能是"in"或"out",若省略该属性则默认为"in"
+
+  `method'节点的一个例子如下:
+  #+BEGIN_SRC xml
+  <method name="ResolveHostName">
+  <arg name="interface" type="i" direction="in"/>
+  <arg name="protocol" type="i" direction="in"/>
+  <arg name="name" type="s" direction="in"/>
+  <arg name="aprotocol" type="i" direction="in"/>
+  <arg name="flags" type="u" direction="in"/>
+  <arg name="interface" type="i" direction="out"/>
+  <arg name="protocol" type="i" direction="out"/>
+  <arg name="name" type="s" direction="out"/>
+  <arg name="aprotocol" type="i" direction="out"/>
+  <arg name="address" type="s" direction="out"/>
+  <arg name="flags" type="u" direction="out"/>
+  </method>
+  #+END_SRC
+
++ `signal'节点
+
+   `signal'节点的结构与`method'一样,只不过`arg'子节点的`direction'属性只能为"out",且默认值也为"out".
+
+  下面是一个`signal'节点的例子
+  #+BEGIN_SRC xml
+    <signal name="StateChanged">
+      <arg name="state" type="i"/>
+      <arg name="error" type="s"/>
+    </signal>
+  #+END_SRC
+
++ `property'节点
+
+  `property'节点没有`arg'子节点,它有三个属性:`name',`type'和`access',且 *这三个属性都是必填的*
+
+  `access'属性可以有三个值:"readwrite","read"和"write". 例如:
+  #+BEGIN_SRC xml
+    <property name="Status" type="u" access="read"/>
+  #+END_SRC
+  
+  *property节点的值,在整个运行期间,可能发生改变*
+
++ `annotation'节点
+
+  *annotation节点既可以是interface节点的子节点,也可以是method,signal或property节点的子节点*.
+
+  `annotation'节点只有两个属性"name"和"value",皆为字符串类型.
+  #+BEGIN_SRC emacs-lisp
+    <annotation name="de.berlios.Pinot.GetStatistics" value="pinotDBus"/>
+  #+END_SRC
+  
+  *annotation节点的值在整个运行期都是固定的,无法被更改*
+*** 相关探测方法
++ (dbus-introspect bus service path)
+  
+  探测`bus'总线`path'路径上的object所发布的`service'服务的所有接口信息.
+
+  参数`bus'必须为`:system'或`:session'
+
+  参数`service'必须为"known service name"
+
+  参数`path'必须为可用的object path
+
+  返回结果为XML格式的字符串:
+  #+BEGIN_SRC emacs-lisp
+    (dbus-introspect
+     :system "org.freedesktop.Hal"
+     "/org/freedesktop/Hal/devices/computer")
+  #+END_SRC
+  结果为
+  #+BEGIN_SRC xml
+    <!DOCTYPE node PUBLIC
+    "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+    "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+    <node>
+      <interface name="org.freedesktop.Hal.Device">
+        <method name="GetAllProperties">
+          <arg name="properties" direction="out" type="a{sv}"/>
+        </method>
+        …
+        <signal name="PropertyModified">
+          <arg name="num_updates" type="i"/>
+          <arg name="updates" type="a(sbb)"/>
+        </signal>
+      </interface>
+      …
+      </node>
+  #+END_SRC
+
++ (dbus-introspect-xml bus service path)
+
+  类似`dbus-introspect',只是 *返回值将XML字符串解析成了S-FORM格式*
+
+  #+BEGIN_SRC emacs-lisp
+    (dbus-introspect-xml
+     :session "org.freedesktop.xesam.searcher"
+     "/org/freedesktop/xesam/searcher/main")
+    ;; 结果为
+    (node ((name . "/org/freedesktop/xesam/searcher/main"))
+          (interface ((name . "org.freedesktop.xesam.Search"))
+                     (method ((name . "GetHitData"))
+                             (arg ((name . "search") (type . "s") (direction . "in")))
+                             (arg ((name . "hit_ids") (type . "au") (direction . "in")))
+                             (arg ((name . "fields") (type . "as") (direction . "in")))
+                             (arg ((name . "hit_data") (type . "aav") (direction . "out")))
+                             )
+                     …
+                     (signal ((name . "HitsAdded"))
+                             (arg ((name . "search") (type . "s")))
+                             (arg ((name . "count") (type . "u")))
+                             )
+                     )
+          …
+          )
+  #+END_SRC
+
++ (dbus-introspect-get-attribute object attribute)
+  
+  从探测结果`object'中获取`attribute'的属性值.
+
+  参数`object'为`dbus-introspect-xml'返回结果的任意子FORM.
+
+  参数`attribute'为要获取的属性名称.
+
+  #+BEGIN_SRC emacs-lisp
+    (dbus-introspect-get-attribute
+     (dbus-introspect-xml :system "org.freedesktop.SystemToolsBackends"
+                          "/org/freedesktop/SystemToolsBackends/UsersConfig")
+     "name")
+
+     ;;=> "/org/freedesktop/SystemToolsBackends/UsersConfig"
+  #+END_SRC
+  
+  若`object'中无`attribute'属性,该函数返回nil
+** 探测object path及其接口
+The first elements, to be introspected for a D-Bus object, are further object paths and interfaces.
+
++ (dbus-introspect-get-node-names bus service path)
+  
+  该函数返回`bus'总线上,"known name"为`service'的,且object path在`path'下的所有节点名称.
+
+  且该节点名称是相对于`path'的相对object path.
+
+  例如:
+  #+BEGIN_SRC emacs-lisp
+    (dbus-introspect-get-node-names
+     :session "org.gnome.seahorse" "/org/gnome/seahorse")
+
+    ;; ⇒ ("crypto" "keys")
+  #+END_SRC
+
+  在上面的例子中,"/org/gnome/seahorse/crypto"和"/org/gnome/seahorse/keys"都是"known name"为`org.gnome.seahorse'的object path.
+
++ (dbus-introspect-get-all-nodes bus service path)
+  
+  类似`dbus-introspect-get-node-name',但返回的是 *绝对object path*
+
+  #+BEGIN_SRC emacs-lisp
+    (dbus-introspect-get-all-nodes :session "org.gnome.seahorse" "/")
+    ;; 结果为
+    ("/" "/org" "/org/gnome" "/org/gnome/seahorse"
+     "/org/gnome/seahorse/crypto"
+     "/org/gnome/seahorse/keys"
+     "/org/gnome/seahorse/keys/openpgp"
+     "/org/gnome/seahorse/keys/openpgp/local"
+     "/org/gnome/seahorse/keys/openssh"
+     "/org/gnome/seahorse/keys/openssh/local")
+  #+END_SRC
+
++ (dbus-introspect-get-interface-names bus service path)
+  
+  
+
+** 方法(methods)与信号(signal)
+** 属性(properties)与注解(Annotatiions)
+** 参数(Arguments)与签名(Signatures)
+* D-Bus类型与Lisp类型的映射关系
+* 调用同步方法
+* 调用异步方法
+* 发布方法
+* 发送/接收信号
+* 替代总线及其环境
+* 错误与事件(Errors and events)
