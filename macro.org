@@ -1,0 +1,31 @@
+#+TITLE: macro
+#+AUTHOR: Administrator
+#+CATEGORY: emacs-lisp-faq
+#+DATE: [2016-02-02 周二 16:10]
+#+OPTIONS: ^:{}
+
+* 如何统计程序消耗的时间
+使用如下宏,可以粗略地统计程序消耗的时间
+#+BEGIN_SRC emacs-lisp
+  (defmacro time (&rest bodys)
+    (let ((start-time (gensym)))
+      `(let ((,start-time (current-time)))
+         ,@bodys
+         (message "pasted time %fs" (float-time (time-subtract (current-time) ,start-time))))))
+#+END_SRC
+只需要将要统计的程序放在time宏内即可
+#+BEGIN_SRC emacs-lisp
+  (time (sit-for 10))                     ; "pasted time 10.030574s"
+#+END_SRC
+
+* 对宏中带有副作用参数的预处理方式
+#+BEGIN_SRC emacs-lisp
+  (defmacro pretreat_args (&rest args)
+    (let ((pretreated_args (cl-gensym)))
+      `(let ((,pretreated_args (list ,@args)))
+         (其他操作))))
+
+  (macroexpand '(pretreat_args (incf a) (incf b)))
+  ;; (let ((G66686 (list (incf a) (incf b))))
+  ;;   (其他操作))
+#+END_SRC
