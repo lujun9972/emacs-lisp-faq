@@ -1,5 +1,5 @@
 #+TITLE: macro
-#+AUTHOR: Administrator
+#+AUTHOR: DarkSun
 #+CATEGORY: emacs-lisp-faq
 #+DATE: [2016-02-02 周二 16:10]
 #+OPTIONS: ^:{}
