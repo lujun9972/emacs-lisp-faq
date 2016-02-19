@@ -29,34 +29,3 @@
   ;; (let ((G66686 (list (incf a) (incf b))))
   ;;   (其他操作))
 #+END_SRC
-* 惰性求值
-通过宏将一系列计算封装为函数,就能实现惰性求值了
-#+BEGIN_SRC emacs-lisp
-  (require 'cl-lib)
-
-  (setq lexical-binding t)
-  (defconst unforced (cl-gensym)
-    "delay对象尚未求值的标志")
-
-  (cl-defstruct delay                     ;定义delay结构体,其由两个部分组成
-    forced                                ;forced代表该delay结构体是否已经求值,若求过值,则直接使用该值
-    closure)                              ;closure为一个闭包,调用它就能得到该delay所代表的值
-
-  (defmacro delay (expr)
-    "使用该宏,将`expr'封装成一个惰性求值对象"
-    (let ((self (gensym)))
-      `(let ((,self (make-delay :forced unforced
-                                :closure #'(lambda ()
-                                             (setf (delay-forced ,self) ,expr)))))
-         ,self)))
-
-  (defun force (x)
-    "对delay对象求值
-  若x不是delay对象则直接返回x,否则返回其表示的值"
-    (if (delay-p x)
-        (if (eq (delay-forced x) unforced)
-            (funcall (delay-closure x))
-          (delay-forced x))
-      x))
-
-#+END_SRC
