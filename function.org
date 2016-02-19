@@ -133,3 +133,223 @@ defun定义的函数在全局作用域可见,即使这个定义是嵌套在另�
   (other-p 1)                             ;nil
   (other-p 3)                             ;t
 #+END_SRC
+* 惰性求值
+通过宏将一系列计算封装为函数,就能实现惰性求值了
+#+BEGIN_SRC emacs-lisp
+  (require 'cl-lib)
+
+  (setq lexical-binding t)
+  (defconst unforced (cl-gensym)
+    "delay对象尚未求值的标志")
+
+  (cl-defstruct delay                     ;定义delay结构体,其由两个部分组成
+    forced                                ;forced代表该delay结构体是否已经求值,若求过值,则直接使用该值
+    closure)                              ;closure为一个闭包,调用它就能得到该delay所代表的值
+
+  (defmacro delay (expr)
+    "使用该宏,将`expr'封装成一个惰性求值对象"
+    (let ((self (gensym)))
+      `(let ((,self (make-delay :forced unforced
+                                :closure #'(lambda ()
+                                             (setf (delay-forced ,self) ,expr)))))
+         ,self)))
+
+  (defun force (x)
+    "对delay对象求值
+  若x不是delay对象则直接返回x,否则返回其表示的值"
+    (if (delay-p x)
+        (if (eq (delay-forced x) unforced)
+            (funcall (delay-closure x))
+          (delay-forced x))
+      x))
+
+#+END_SRC
+* 给函数加上回调函数
+可以使用宏給一个函数执行完后加上回调函数
+#+BEGIN_SRC emacs-lisp
+  (setq lexical-binding t)
+
+  (defmacro cps (fn callback-fn &rest cb-args)
+    "CB-ARGS中使用__SELF__指代fn函数的计算值"
+    `(lambda (&rest args)
+       (let ((__SELF__ (apply ,fn args)))
+         (funcall ,callback-fn ,@cb-args))))
+
+  (fset 'hello-read-string (cps #'read-string #'message "hello %s" __SELF__))
+
+  (hello-read-string "who are you?")
+#+END_SRC
+
+*在Elisp中其实有更友好的实现方式,那就是advise-function*.
+* Advising Emacs Lisp Functions
+  Emacs's advice system provides two sets of primitives for that: 
+  the core set, for function values held in variables and object fields (with the corresponding primitives being `add-function' and `remove-function') and 
+  another set layered on top of it for named functions (with the main primitives being `advice-add' and `advice-remove').
+	 
+** Core Advising Primitives
+   
+   * (add-function where function-place advise-function &optional props)
+
+	 为存储function的place(泛化变量)加上advise-function,使之称为一个组合了原始函数和advise函数的组合函数.
+
+     * where参数指明了advise-function与function-place处函数的整合方式. 
+
+	   * :before
+
+		 在调用原function(function-place所存放的function)前调用advise-function.
+
+		 原function与advise-function接收同样的参数调用,并以原function的返回结果为组合函数的返回结果
+		 #+BEGIN_SRC emacs-lisp
+           (add-function :before 'old-function 'advise-function) 
+           ;; 等价于
+           (lambda (r) (advise-function r) (old-function r))
+		 #+END_SRC
+
+	   * :after
+
+		 在原function调用之后调用advise-function. 
+
+		 原function与advise-function接收同样的参数调用,并以原function的返回结果为组合函数的返回结果
+		 #+BEGIN_SRC emacs-lisp
+           (add-function :after 'old-function 'advise-function) 
+           ;; 等价于
+           (lambda (r) (prog1(advise-function r) (old-function r)))
+		 #+END_SRC
+
+	   * :override
+
+		 用advise-function代替原function
+
+	   * :around
+
+		 使用advise-function代替原function,但原function会作为第一个参数传递給advise-function. 这样advise-function内可以调用原函数.
+		 #+BEGIN_SRC emacs-lisp
+           (add-function :around 'old-function 'advise-function)
+           ;; 等价于
+           (lambda (r) (apply 'advise-function 'old-function r))
+		 #+END_SRC
+
+	   * :before-while
+
+		 先执行advise-function,若advise-function返回nil,则不再调用原function.
+
+		 advise-function与原function公用一样的参数,使用原function的结果作为组合函数的返回值
+		 #+BEGIN_SRC emacs-lisp
+           (add-function :before-while 'old-function 'advise-function)
+           ;; 等价于
+           (lambda (r) (and (apply 'old-function r) (appy 'advise-function r)))
+		 #+END_SRC
+
+	   * :before-until
+
+		 先执行advise-function, 只有当advise-function返回nil,才调用原function.
+
+		 advise-function与原function共用一样的参数,使用原function的结果作为组合函数的返回值
+		 #+BEGIN_SRC emacs-lisp
+           (add-function :before-while 'old-function 'advise-function)
+           ;; 等价于
+           (lambda (r) (or (apply 'old-function r) (appy 'advise-function r)))
+		 #+END_SRC
+
+	   * :after-while
+
+		 先调用原function,若function返回nil,则不调用advise-function.
+
+		 原function和advise-function共用同样的参数. 组合函数的返回结果为 *advise-function* 的返回结果
+		 #+BEGIN_SRC emacs-lisp
+           (add-function :after-while 'old-function 'advise-function)
+           ;; 等价于
+           (lambda (rest r) (and (apply 'old-function r) (apply advise-function r)))
+		 #+END_SRC
+
+	   * :after-until
+
+		 先调用原function,只有当function返回nil时,才调用advise-function.
+
+		 原function和advise-function共用同样的参数. 组合函数的返回结果为 *advise-function* 的返回结果
+		 #+BEGIN_SRC emacs-lisp
+           (add-function :after-while 'old-function 'advise-function)
+           ;; 等价于
+           (lambda (rest r) (or (apply 'old-function r) (apply advise-function r)))
+		 #+END_SRC
+
+	   * :filter-args
+
+		 先用原始参数调用advise-function,再将advise-function返回的结果(advise-function必须返回一个list)作为参数,来调用原function.
+		 #+BEGIN_SRC emacs-lisp
+           (add-function :filter-args 'old-function 'advise-function)
+           ;; 等价于
+           (lambda (reset& r) (apply 'old-function (funcall 'advise-function r)))
+		 #+END_SRC
+
+	   * :filter-return
+
+		 先调用old-function,将结果作为参数调用advise-function.
+		 #+BEGIN_SRC emacs-lisp
+           (add-function :filter-return 'old-function 'advise-function)
+           ;; 等价于
+           (lambda(rest& r) (funcall 'advise-function (apply 'old-function r)))
+		 #+END_SRC
+		 
+	 * function-place为被添加advise-function的函数位置. 它同时也决定了该advise是全局都有用,还是只在当前buffer生效.
+
+	   若function-place是一个symbol,则该advise全局生效
+
+	   若function-place为'(local SYMBOL-expression),这里SYMBOL-experssion表示一个expression,它的计算结果为一个表示变量的symbol. 则该advise只在当前buffer生效
+
+	   若要对静态作用域下的变量提出advise,则function-place的格式应为(var VARIABLE)
+
+     * props参数为一个代表属性的alist,目前只支持两个属性:
+
+	   name属性,表示该advice的名字,当remove-function时有用. 尤其是当advise-function为匿名函数时,特别有用.
+
+	   depth属性,表示优先级,用于决定多个advise-function的执行顺序. 
+	   他的取值范围从-100(表示最接近原始函数的执行顺序)到100(表示里原始函数的执行顺序最远). 默认为0
+       当两个advise-function用了同一个优先级,则最后添加的advise-function会覆盖前面的.
+
+     * advise-function参数
+
+	   若advise-function没有interactive声明,则advise后的组合函数会继承原始函数的interactive声明.
+
+	   若advise-function有interactive声明,则advise后的组合函数使用advise-function的interactive声明.
+
+	   上述关于advised后的组合函数的interactive声明,在某一种情况下不成立: 
+       if the interactive spec of FUNCTION is a function (rather than an expression or a string), then the interactive spec of the combined function will be a call to that function with as sole argument the interactive spec of the original function.  To interpret the spec received as argument, use `advice-eval-interactive-spec'.
+
+   * (remove-function function-place advise-function)
+
+	 删除通过add-function添加到function-place的advise-function
+
+   * (advice-function-member-p advice-function function-def)
+
+	 判断advice-function是否已经function-def的advice
+
+   * (advice-function-mapc f function-def)
+
+	 用添加到function-def的每个advicse-function和对应的propos作为参数,都调用一次f函数.
+
+   * (advice-eval-interactive-spec interactive-spec)
+
+	 根据interactive-spec所声明的interactive方式,返回对应的获取值.
+** Advising Named Functions
+   advice的最常用法是給命名函数或宏添加advice
+
+   这种方法会引入一些问题,最好在没有办法的时候,使用下面的方法添加advice
+
+   * (advice-add function-symbol where advice-function &optional props)
+
+     为function-symbol添加名为advice-function的advice. where和props参数与add-function一致
+
+   * (advice-remove function-symbol advise-function)
+
+	 删除function-symbol上的advise-function
+
+   * (advice-member-p advise-function function-symbol)
+
+	 判断advise-function是否已经是function-symbol的advice了
+
+   * (advice-mapc f function-symbol)
+
+	 使用function-symbol中的每个advise-function及其对应的props作为参数,用f来调用.
+  
+
