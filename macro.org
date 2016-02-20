@@ -29,3 +29,16 @@
   ;; (let ((G66686 (list (incf a) (incf b))))
   ;;   (其他操作))
 #+END_SRC
+
+* 实现clojure中的thread-last宏
+  #+BEGIN_SRC emacs-lisp
+(defun thread-last-help-fn (&rest forms)
+  (if (= 1 (length forms))
+      forms
+    (append (car forms)
+            (apply #'thread-last-help-fn (cdr forms)))))
+
+(defmacro ->> (&rest forms)
+  (let ((forms (reverse forms)))
+    (apply #'thread-last-help-fn forms)))
+  #+END_SRC
