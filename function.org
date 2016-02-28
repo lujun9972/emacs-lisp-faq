@@ -353,3 +353,26 @@ defun定义的函数在全局作用域可见,即使这个定义是嵌套在另�
 	 使用function-symbol中的每个advise-function及其对应的props作为参数,用f来调用.
   
 
+* 不存在的函数
+通过`make-symbol'可以创建一个uninterned symbol, 由于elisp reader在读取源代码时会自动产生同名的interned symbol，因此这种uninterned symbol几乎无法被直接操作。
+
+但是我们却可以用set对产生的uninterned symbol绑定值，或使用fset为其绑定函数。
+#+BEGIN_SRC emacs-lisp
+  (setq fn
+        (let ((fn-name (make-symbol "invisible-function")))
+          (fset fn-name (lambda ()
+                          (message "I am unvisible")))
+          fn-name))
+
+  ;; fn绑定的是uninternd symbol invisible-function
+  (symbol-name fn)                        ;"invisible-function""
+
+  ;; 要注意uninternd symbol invisible-function 与internd symbol invisible-function是不同的
+  (intern-soft "invisible-function")      ;nil
+  (eq fn 'invisible-function)             ;nil'
+
+  ;; 无法直接调用invisible-function
+  (funcall 'invisible-function)           ;entered--Lisp error: (void-function invisible-function)
+  ;; 但可以通过fn间接调用
+  (funcall fn)                            ;"I am unvisible"
+#+END_SRC
